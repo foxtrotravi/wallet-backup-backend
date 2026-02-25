@@ -31,6 +31,11 @@ export interface BackendBackupConfig {
    * Network errors and 5xx responses are retried; 4xx errors are NOT.
    */
   retry?: Partial<RetryConfig> | null;
+  /**
+   * Optional debug interceptor for inspecting requests and responses.
+   * Only use in development — callbacks may receive sensitive data.
+   */
+  debug?: DebugInterceptor | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -39,20 +44,59 @@ export interface BackendBackupConfig {
 
 export interface UploadSeedParams {
   /** The encrypted seed — never modify or log this value. */
-  encryptedSeed: string;
-  /** Bearer token used for backend authentication. */
+  seed: string;
+  /** Auth token used for backend authentication (sent as x-authtoken). */
   authToken: string;
-  /** Optional device identifier to associate with the backup. */
-  deviceId?: string;
+  /** Optional metadata to associate with the backup. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface UploadEntropyParams {
   /** The encrypted entropy — never modify or log this value. */
-  encryptedEntropy: string;
-  /** Bearer token used for backend authentication. */
+  entropy: string;
+  /** Auth token used for backend authentication (sent as x-authtoken). */
   authToken: string;
-  /** Optional device identifier to associate with the backup. */
-  deviceId?: string;
+  /** Optional metadata to associate with the backup. */
+  metadata?: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Debug interceptor
+// ---------------------------------------------------------------------------
+
+export interface RequestDebugInfo {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body?: Record<string, unknown>;
+}
+
+export interface ResponseDebugInfo {
+  url: string;
+  method: string;
+  status: number;
+  data: unknown;
+  durationMs: number;
+}
+
+export interface ErrorDebugInfo {
+  url: string;
+  method: string;
+  error: Error;
+  durationMs: number;
+}
+
+/**
+ * Optional interceptor for debugging API traffic.
+ *
+ * **WARNING**: Callbacks may receive encrypted payloads and auth tokens.
+ * Only enable in development builds — never ship to production with
+ * interceptors that persist or transmit the received data.
+ */
+export interface DebugInterceptor {
+  onRequest?: (info: RequestDebugInfo) => void;
+  onResponse?: (info: ResponseDebugInfo) => void;
+  onError?: (info: ErrorDebugInfo) => void;
 }
 
 // ---------------------------------------------------------------------------

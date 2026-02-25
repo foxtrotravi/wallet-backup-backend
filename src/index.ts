@@ -15,6 +15,10 @@ export type {
   UploadSeedParams,
   UploadEntropyParams,
   RetryConfig,
+  DebugInterceptor,
+  RequestDebugInfo,
+  ResponseDebugInfo,
+  ErrorDebugInfo,
 } from './types.js';
 
 // Typed errors — consumers need these for `instanceof` checks

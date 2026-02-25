@@ -22,14 +22,28 @@ import type {
 
 // ---------------------------------------------------------------------------
 // Response schemas (Zod) — runtime shape validation
+//
+// The backend returns arrays: { seeds: [{ seed, metadata }, ...] }.
+// The SDK validates the shape and extracts the most recent entry so
+// callers get a plain string back.
 // ---------------------------------------------------------------------------
 
+const SeedItemSchema = z.object({
+  seed: z.string().min(1),
+  metadata: z.record(z.unknown()).optional(),
+});
+
 const SeedResponseSchema = z.object({
-  encryptedSeed: z.string().min(1),
+  seeds: z.array(SeedItemSchema),
+});
+
+const EntropyItemSchema = z.object({
+  entropy: z.string().min(1),
+  metadata: z.record(z.unknown()).optional(),
 });
 
 const EntropyResponseSchema = z.object({
-  encryptedEntropy: z.string().min(1),
+  entropies: z.array(EntropyItemSchema),
 });
 
 // ---------------------------------------------------------------------------
@@ -70,6 +84,7 @@ export class BackendBackupClient {
       http ??
       new AxiosHttpClient(
         config.retry === null ? null : { ...DEFAULT_RETRY, ...config.retry },
+        config.debug,
       );
   }
 
@@ -82,16 +97,13 @@ export class BackendBackupClient {
    * The payload is transmitted as-is — no transformation is applied.
    */
   async uploadSeed(params: UploadSeedParams): Promise<void> {
-    const { encryptedSeed, authToken, deviceId } = params;
-
-    const body: Record<string, unknown> = { encryptedSeed };
-    if (deviceId !== undefined) body['deviceId'] = deviceId;
+    const { seed, authToken, metadata } = params;
 
     await this.http.request({
       url: this.url('/seed'),
       method: 'POST',
       headers: this.authHeader(authToken),
-      body,
+      body: { seed, metadata: metadata ?? {} },
       timeoutMs: this.timeoutMs,
     });
   }
@@ -101,16 +113,13 @@ export class BackendBackupClient {
    * The payload is transmitted as-is — no transformation is applied.
    */
   async uploadEntropy(params: UploadEntropyParams): Promise<void> {
-    const { encryptedEntropy, authToken, deviceId } = params;
-
-    const body: Record<string, unknown> = { encryptedEntropy };
-    if (deviceId !== undefined) body['deviceId'] = deviceId;
+    const { entropy, authToken, metadata } = params;
 
     await this.http.request({
       url: this.url('/entropy'),
       method: 'POST',
       headers: this.authHeader(authToken),
-      body,
+      body: { entropy, metadata: metadata ?? {} },
       timeoutMs: this.timeoutMs,
     });
   }
@@ -120,11 +129,12 @@ export class BackendBackupClient {
   // -------------------------------------------------------------------------
 
   /**
-   * Retrieve the encrypted seed from the backend.
+   * Retrieve the most recent encrypted seed from the backend.
+   * Returns `null` when no backup exists (null response or empty array).
    * The response shape is validated with Zod; a malformed response throws
    * BackendValidationError rather than silently returning `undefined`.
    */
-  async getSeed(authToken: string): Promise<string> {
+  async getSeed(authToken: string): Promise<string | null> {
     const response = await this.http.request<unknown>({
       url: this.url('/seed'),
       method: 'GET',
@@ -132,19 +142,27 @@ export class BackendBackupClient {
       timeoutMs: this.timeoutMs,
     });
 
+    if (response.data === null || response.data === undefined) {
+      return null;
+    }
+
     return this.parseResponse(
       response.data,
       SeedResponseSchema,
-      (parsed) => parsed.encryptedSeed,
+      (parsed) => {
+        if (parsed.seeds.length === 0) return null;
+        return parsed.seeds[parsed.seeds.length - 1]!.seed;
+      },
       'GET /seed',
     );
   }
 
   /**
-   * Retrieve the encrypted entropy from the backend.
+   * Retrieve the most recent encrypted entropy from the backend.
+   * Returns `null` when no backup exists (null response or empty array).
    * The response shape is validated with Zod.
    */
-  async getEntropy(authToken: string): Promise<string> {
+  async getEntropy(authToken: string): Promise<string | null> {
     const response = await this.http.request<unknown>({
       url: this.url('/entropy'),
       method: 'GET',
@@ -152,10 +170,17 @@ export class BackendBackupClient {
       timeoutMs: this.timeoutMs,
     });
 
+    if (response.data === null || response.data === undefined) {
+      return null;
+    }
+
     return this.parseResponse(
       response.data,
       EntropyResponseSchema,
-      (parsed) => parsed.encryptedEntropy,
+      (parsed) => {
+        if (parsed.entropies.length === 0) return null;
+        return parsed.entropies[parsed.entropies.length - 1]!.entropy;
+      },
       'GET /entropy',
     );
   }

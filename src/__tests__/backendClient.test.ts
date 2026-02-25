@@ -3,10 +3,10 @@
  * No real HTTP requests are made.
  *
  * Covers:
- *   - uploadSeed: correct endpoint, method, Auth header, body shape
- *   - uploadEntropy: correct endpoint, method, Auth header, body shape
- *   - getSeed: Zod parse success and failure
- *   - getEntropy: Zod parse success and failure
+ *   - uploadSeed: correct endpoint, method, auth header, body shape
+ *   - uploadEntropy: correct endpoint, method, auth header, body shape
+ *   - getSeed: array response parsing, null handling, empty array, validation
+ *   - getEntropy: array response parsing, null handling, empty array, validation
  *   - deleteBackup: both DELETE requests fired in parallel
  *   - Error propagation: auth error, network error
  *   - Constructor: missing baseUrl throws
@@ -46,7 +46,6 @@ function errorHttp(err: Error): IHttpClient {
 
 const BASE_URL = 'https://api.example.com';
 const TOKEN = 'test-bearer-token';
-const DEVICE_ID = 'device-abc';
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -62,7 +61,7 @@ describe('BackendBackupClient — constructor', () => {
   it('strips trailing slash from baseUrl', async () => {
     const http = successHttp({});
     const client = new BackendBackupClient({ baseUrl: `${BASE_URL}/` }, http);
-    await client.uploadSeed({ encryptedSeed: 'x', authToken: TOKEN });
+    await client.uploadSeed({ seed: 'x', authToken: TOKEN });
 
     const mock = (http.request as jest.Mock).mock.calls[0]?.[0] as HttpRequestConfig;
     expect(mock.url).toBe('https://api.example.com/seed');
@@ -74,10 +73,10 @@ describe('BackendBackupClient — constructor', () => {
 // ---------------------------------------------------------------------------
 
 describe('BackendBackupClient.uploadSeed', () => {
-  it('calls POST /seed with correct url, method, and auth header', async () => {
+  it('calls POST /seed with correct url, method, and Bearer auth', async () => {
     const http = successHttp({});
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
-    await client.uploadSeed({ encryptedSeed: 'enc-seed', authToken: TOKEN });
+    await client.uploadSeed({ seed: 'enc-seed', authToken: TOKEN });
 
     const call = (http.request as jest.Mock).mock.calls[0]?.[0] as HttpRequestConfig;
     expect(call.url).toBe(`${BASE_URL}/seed`);
@@ -85,38 +84,29 @@ describe('BackendBackupClient.uploadSeed', () => {
     expect(call.headers?.['Authorization']).toBe(`Bearer ${TOKEN}`);
   });
 
-  it('includes encryptedSeed in body', async () => {
+  it('sends { seed, metadata } in body', async () => {
     const http = successHttp({});
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
-    await client.uploadSeed({ encryptedSeed: 'enc-seed', authToken: TOKEN });
+    await client.uploadSeed({ seed: 'enc-seed', authToken: TOKEN, metadata: { device: 'ios' } });
 
     const call = (http.request as jest.Mock).mock.calls[0]?.[0] as HttpRequestConfig;
-    expect(call.body?.['encryptedSeed']).toBe('enc-seed');
+    expect(call.body).toEqual({ seed: 'enc-seed', metadata: { device: 'ios' } });
   });
 
-  it('includes deviceId when provided', async () => {
+  it('defaults metadata to {} when not provided', async () => {
     const http = successHttp({});
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
-    await client.uploadSeed({ encryptedSeed: 'enc', authToken: TOKEN, deviceId: DEVICE_ID });
+    await client.uploadSeed({ seed: 'enc', authToken: TOKEN });
 
     const call = (http.request as jest.Mock).mock.calls[0]?.[0] as HttpRequestConfig;
-    expect(call.body?.['deviceId']).toBe(DEVICE_ID);
-  });
-
-  it('omits deviceId from body when not provided', async () => {
-    const http = successHttp({});
-    const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
-    await client.uploadSeed({ encryptedSeed: 'enc', authToken: TOKEN });
-
-    const call = (http.request as jest.Mock).mock.calls[0]?.[0] as HttpRequestConfig;
-    expect(call.body).not.toHaveProperty('deviceId');
+    expect(call.body).toEqual({ seed: 'enc', metadata: {} });
   });
 
   it('propagates BackendAuthError', async () => {
     const http = errorHttp(new BackendAuthError());
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     await expect(
-      client.uploadSeed({ encryptedSeed: 'x', authToken: TOKEN }),
+      client.uploadSeed({ seed: 'x', authToken: TOKEN }),
     ).rejects.toBeInstanceOf(BackendAuthError);
   });
 
@@ -124,7 +114,7 @@ describe('BackendBackupClient.uploadSeed', () => {
     const http = errorHttp(new BackendNetworkError('timeout'));
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     await expect(
-      client.uploadSeed({ encryptedSeed: 'x', authToken: TOKEN }),
+      client.uploadSeed({ seed: 'x', authToken: TOKEN }),
     ).rejects.toBeInstanceOf(BackendNetworkError);
   });
 });
@@ -134,10 +124,10 @@ describe('BackendBackupClient.uploadSeed', () => {
 // ---------------------------------------------------------------------------
 
 describe('BackendBackupClient.uploadEntropy', () => {
-  it('calls POST /entropy with correct url and auth', async () => {
+  it('calls POST /entropy with correct url and Bearer auth', async () => {
     const http = successHttp({});
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
-    await client.uploadEntropy({ encryptedEntropy: 'enc-ent', authToken: TOKEN });
+    await client.uploadEntropy({ entropy: 'enc-ent', authToken: TOKEN });
 
     const call = (http.request as jest.Mock).mock.calls[0]?.[0] as HttpRequestConfig;
     expect(call.url).toBe(`${BASE_URL}/entropy`);
@@ -145,22 +135,22 @@ describe('BackendBackupClient.uploadEntropy', () => {
     expect(call.headers?.['Authorization']).toBe(`Bearer ${TOKEN}`);
   });
 
-  it('includes encryptedEntropy in body', async () => {
+  it('sends { entropy, metadata } in body', async () => {
     const http = successHttp({});
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
-    await client.uploadEntropy({ encryptedEntropy: 'enc-ent', authToken: TOKEN });
+    await client.uploadEntropy({ entropy: 'enc-ent', authToken: TOKEN, metadata: { v: 1 } });
 
     const call = (http.request as jest.Mock).mock.calls[0]?.[0] as HttpRequestConfig;
-    expect(call.body?.['encryptedEntropy']).toBe('enc-ent');
+    expect(call.body).toEqual({ entropy: 'enc-ent', metadata: { v: 1 } });
   });
 
-  it('includes optional deviceId', async () => {
+  it('defaults metadata to {} when not provided', async () => {
     const http = successHttp({});
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
-    await client.uploadEntropy({ encryptedEntropy: 'enc-ent', authToken: TOKEN, deviceId: 'dev-1' });
+    await client.uploadEntropy({ entropy: 'enc-ent', authToken: TOKEN });
 
     const call = (http.request as jest.Mock).mock.calls[0]?.[0] as HttpRequestConfig;
-    expect(call.body?.['deviceId']).toBe('dev-1');
+    expect(call.body).toEqual({ entropy: 'enc-ent', metadata: {} });
   });
 });
 
@@ -169,15 +159,29 @@ describe('BackendBackupClient.uploadEntropy', () => {
 // ---------------------------------------------------------------------------
 
 describe('BackendBackupClient.getSeed', () => {
-  it('returns encryptedSeed on valid response', async () => {
-    const http = successHttp({ encryptedSeed: 'my-enc-seed' });
+  it('returns the last seed from the array', async () => {
+    const http = successHttp({
+      seeds: [
+        { seed: 'old-seed', metadata: {} },
+        { seed: 'newest-seed', metadata: { ts: 123 } },
+      ],
+    });
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     const result = await client.getSeed(TOKEN);
-    expect(result).toBe('my-enc-seed');
+    expect(result).toBe('newest-seed');
   });
 
-  it('calls GET /seed with auth header', async () => {
-    const http = successHttp({ encryptedSeed: 'seed' });
+  it('returns the seed when only one item exists', async () => {
+    const http = successHttp({
+      seeds: [{ seed: 'only-seed' }],
+    });
+    const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
+    const result = await client.getSeed(TOKEN);
+    expect(result).toBe('only-seed');
+  });
+
+  it('calls GET /seed with Authorization Bearer header', async () => {
+    const http = successHttp({ seeds: [{ seed: 'seed' }] });
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     await client.getSeed(TOKEN);
 
@@ -187,20 +191,35 @@ describe('BackendBackupClient.getSeed', () => {
     expect(call.headers?.['Authorization']).toBe(`Bearer ${TOKEN}`);
   });
 
-  it('throws BackendValidationError when encryptedSeed is missing', async () => {
+  it('returns null when backend returns null', async () => {
+    const http = successHttp(null);
+    const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
+    const result = await client.getSeed(TOKEN);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when backend returns undefined', async () => {
+    const http = makeMockHttp(() => Promise.resolve({ status: 200, data: undefined as unknown }));
+    const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
+    const result = await client.getSeed(TOKEN);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when seeds array is empty', async () => {
+    const http = successHttp({ seeds: [] });
+    const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
+    const result = await client.getSeed(TOKEN);
+    expect(result).toBeNull();
+  });
+
+  it('throws BackendValidationError when seeds field is missing', async () => {
     const http = successHttp({ somethingElse: 'oops' });
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     await expect(client.getSeed(TOKEN)).rejects.toBeInstanceOf(BackendValidationError);
   });
 
-  it('throws BackendValidationError when encryptedSeed is empty string', async () => {
-    const http = successHttp({ encryptedSeed: '' });
-    const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
-    await expect(client.getSeed(TOKEN)).rejects.toBeInstanceOf(BackendValidationError);
-  });
-
-  it('throws BackendValidationError when response is null', async () => {
-    const http = successHttp(null);
+  it('throws BackendValidationError when seed item has empty string', async () => {
+    const http = successHttp({ seeds: [{ seed: '' }] });
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     await expect(client.getSeed(TOKEN)).rejects.toBeInstanceOf(BackendValidationError);
   });
@@ -217,27 +236,47 @@ describe('BackendBackupClient.getSeed', () => {
 // ---------------------------------------------------------------------------
 
 describe('BackendBackupClient.getEntropy', () => {
-  it('returns encryptedEntropy on valid response', async () => {
-    const http = successHttp({ encryptedEntropy: 'my-enc-entropy' });
+  it('returns the last entropy from the array', async () => {
+    const http = successHttp({
+      entropies: [
+        { entropy: 'old-entropy' },
+        { entropy: 'newest-entropy', metadata: { ts: 456 } },
+      ],
+    });
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     const result = await client.getEntropy(TOKEN);
-    expect(result).toBe('my-enc-entropy');
+    expect(result).toBe('newest-entropy');
   });
 
-  it('throws BackendValidationError when encryptedEntropy is missing', async () => {
+  it('returns null when backend returns null', async () => {
+    const http = successHttp(null);
+    const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
+    const result = await client.getEntropy(TOKEN);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when entropies array is empty', async () => {
+    const http = successHttp({ entropies: [] });
+    const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
+    const result = await client.getEntropy(TOKEN);
+    expect(result).toBeNull();
+  });
+
+  it('throws BackendValidationError when entropies field is missing', async () => {
     const http = successHttp({ data: 'wrong-shape' });
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     await expect(client.getEntropy(TOKEN)).rejects.toBeInstanceOf(BackendValidationError);
   });
 
-  it('calls GET /entropy with correct auth header', async () => {
-    const http = successHttp({ encryptedEntropy: 'ent' });
+  it('calls GET /entropy with Authorization Bearer header', async () => {
+    const http = successHttp({ entropies: [{ entropy: 'ent' }] });
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     await client.getEntropy(TOKEN);
 
     const call = (http.request as jest.Mock).mock.calls[0]?.[0] as HttpRequestConfig;
     expect(call.url).toBe(`${BASE_URL}/entropy`);
     expect(call.method).toBe('GET');
+    expect(call.headers?.['Authorization']).toBe(`Bearer ${TOKEN}`);
   });
 });
 
@@ -262,7 +301,7 @@ describe('BackendBackupClient.deleteBackup', () => {
     expect(methods).toEqual(['DELETE', 'DELETE']);
   });
 
-  it('sends auth header on both DELETE requests', async () => {
+  it('sends Authorization Bearer on both DELETE requests', async () => {
     const http = successHttp({});
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     await client.deleteBackup(TOKEN);

@@ -20,7 +20,12 @@ import {
   BackendNetworkError,
   BackendValidationError,
 } from '../errors/index.js';
-import type { HttpRequestConfig, HttpResponse, RetryConfig } from '../types.js';
+import type {
+  HttpRequestConfig,
+  HttpResponse,
+  RetryConfig,
+  DebugInterceptor,
+} from '../types.js';
 
 // ---------------------------------------------------------------------------
 // Public interface — the only thing BackendBackupClient depends on
@@ -46,8 +51,14 @@ const DEFAULT_RETRY: RetryConfig = {
 
 export class AxiosHttpClient implements IHttpClient {
   private readonly instance: AxiosInstance;
+  private readonly debug: DebugInterceptor | null;
 
-  constructor(retry: Partial<RetryConfig> | null | undefined) {
+  constructor(
+    retry: Partial<RetryConfig> | null | undefined,
+    debug?: DebugInterceptor | null,
+  ) {
+    this.debug = debug ?? null;
+
     this.instance = axios.create({
       // baseURL is NOT set here — full URLs are passed per-request so the
       // client can be reused against different endpoints if needed.
@@ -79,6 +90,15 @@ export class AxiosHttpClient implements IHttpClient {
   }
 
   async request<T = unknown>(config: HttpRequestConfig): Promise<HttpResponse<T>> {
+    this.debug?.onRequest?.({
+      url: config.url,
+      method: config.method,
+      headers: config.headers ?? {},
+      body: config.body ?? {},
+    });
+
+    const startMs = Date.now();
+
     try {
       const response = await this.instance.request<T>({
         url: config.url,
@@ -91,9 +111,29 @@ export class AxiosHttpClient implements IHttpClient {
         timeout: config.timeoutMs,
       });
 
+      const durationMs = Date.now() - startMs;
+
+      this.debug?.onResponse?.({
+        url: config.url,
+        method: config.method,
+        status: response.status,
+        data: response.data,
+        durationMs,
+      });
+
       return this.handleResponse<T>(response.status, response.data);
     } catch (err) {
-      throw this.classifyError(err);
+      const durationMs = Date.now() - startMs;
+      const classified = this.classifyError(err);
+
+      this.debug?.onError?.({
+        url: config.url,
+        method: config.method,
+        error: classified,
+        durationMs,
+      });
+
+      throw classified;
     }
   }
 
