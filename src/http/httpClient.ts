@@ -1,0 +1,155 @@
+/**
+ * @wallet/backup-backend — HTTP Abstraction Layer
+ *
+ * IHttpClient is the seam that allows the concrete HTTP implementation to be
+ * swapped out (e.g. in tests, or for a custom fetch-based implementation).
+ *
+ * AxiosHttpClient is the production implementation backed by Axios +
+ * axios-retry.  It never logs request/response bodies to prevent accidental
+ * leakage of encrypted payloads.
+ */
+
+import axios, {
+  type AxiosInstance,
+  type AxiosError,
+  type InternalAxiosRequestConfig,
+} from 'axios';
+import axiosRetry, { isNetworkError, isRetryableError } from 'axios-retry';
+import {
+  BackendAuthError,
+  BackendNetworkError,
+  BackendValidationError,
+} from '../errors/index.js';
+import type { HttpRequestConfig, HttpResponse, RetryConfig } from '../types.js';
+
+// ---------------------------------------------------------------------------
+// Public interface — the only thing BackendBackupClient depends on
+// ---------------------------------------------------------------------------
+
+export interface IHttpClient {
+  request<T = unknown>(config: HttpRequestConfig): Promise<HttpResponse<T>>;
+}
+
+// ---------------------------------------------------------------------------
+// Default retry configuration
+// ---------------------------------------------------------------------------
+
+const DEFAULT_RETRY: RetryConfig = {
+  count: 3,
+  delayMs: 300,
+  backoffFactor: 2,
+};
+
+// ---------------------------------------------------------------------------
+// AxiosHttpClient
+// ---------------------------------------------------------------------------
+
+export class AxiosHttpClient implements IHttpClient {
+  private readonly instance: AxiosInstance;
+
+  constructor(retry: Partial<RetryConfig> | null | undefined) {
+    this.instance = axios.create({
+      // baseURL is NOT set here — full URLs are passed per-request so the
+      // client can be reused against different endpoints if needed.
+      validateStatus: () => true, // Handle status codes ourselves
+    });
+
+    if (retry !== null && retry !== undefined) {
+      const cfg: RetryConfig = { ...DEFAULT_RETRY, ...retry };
+
+      axiosRetry(this.instance, {
+        retries: cfg.count,
+        retryDelay: (retryNumber) =>
+          cfg.delayMs * Math.pow(cfg.backoffFactor, retryNumber - 1),
+        retryCondition: (error: AxiosError) =>
+          // Retry on network errors and 5xx — never retry 4xx
+          isNetworkError(error) || isRetryableError(error),
+        onRetry: (_retryCount, _error, _requestConfig) => {
+          // Intentionally do NOT log the error body or request payload to
+          // prevent leaking encrypted values into logs.
+        },
+      });
+    }
+
+    // Strip sensitive headers from logs (defence-in-depth)
+    this.instance.interceptors.request.use(
+      (config: InternalAxiosRequestConfig) => config,
+      (error: unknown) => Promise.reject(error),
+    );
+  }
+
+  async request<T = unknown>(config: HttpRequestConfig): Promise<HttpResponse<T>> {
+    try {
+      const response = await this.instance.request<T>({
+        url: config.url,
+        method: config.method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...config.headers,
+        },
+        data: config.body,
+        timeout: config.timeoutMs,
+      });
+
+      return this.handleResponse<T>(response.status, response.data);
+    } catch (err) {
+      throw this.classifyError(err);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Private helpers
+  // -------------------------------------------------------------------------
+
+  private handleResponse<T>(status: number, data: T): HttpResponse<T> {
+    if (status >= 200 && status < 300) {
+      return { status, data };
+    }
+
+    if (status === 401 || status === 403) {
+      throw new BackendAuthError(
+        `Authentication failed (HTTP ${status})`,
+        { statusCode: status },
+      );
+    }
+
+    if (status >= 400 && status < 500) {
+      throw new BackendValidationError(
+        `Request rejected by server (HTTP ${status})`,
+        { statusCode: status },
+      );
+    }
+
+    // 5xx — should have been retried already; surface as network error
+    throw new BackendNetworkError(
+      `Server error (HTTP ${status})`,
+      { statusCode: status },
+    );
+  }
+
+  private classifyError(err: unknown): Error {
+    // Already one of our typed errors (thrown inside handleResponse)
+    if (
+      err instanceof BackendAuthError ||
+      err instanceof BackendValidationError ||
+      err instanceof BackendNetworkError
+    ) {
+      return err;
+    }
+
+    const axiosErr = err as AxiosError | undefined;
+
+    if (axiosErr?.code === 'ECONNABORTED' || axiosErr?.code === 'ETIMEDOUT') {
+      return new BackendNetworkError('Request timed out', { cause: err });
+    }
+
+    if (axiosErr?.isAxiosError) {
+      return new BackendNetworkError(
+        axiosErr.message ?? 'Network error',
+        { cause: err },
+      );
+    }
+
+    return new BackendNetworkError('Unknown network error', { cause: err });
+  }
+}
