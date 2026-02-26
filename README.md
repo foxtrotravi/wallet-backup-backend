@@ -1,4 +1,4 @@
-# @wallet/backup-backend
+# @foxtrotravi/backup-backend
 
 > Production-grade SDK for securely uploading and retrieving encrypted wallet seeds and entropy to/from a client backend.
 
@@ -9,7 +9,7 @@
 
 ## Overview
 
-`@wallet/backup-backend` handles all communication between a wallet application and a client-owned backend that stores **pre-encrypted** seed phrases and entropy. The backend **never receives plaintext** — encryption is handled separately by the crypto module before data ever reaches this SDK.
+`@foxtrotravi/backup-backend` handles all communication between a wallet application and a client-owned backend that stores **pre-encrypted** seed phrases and entropy. The backend **never receives plaintext** — encryption is handled separately by the crypto module before data ever reaches this SDK.
 
 **Platform support:** React Native · Web · Node.js (no native APIs)
 
@@ -18,9 +18,9 @@
 ## Installation
 
 ```bash
-npm install @wallet/backup-backend
+npm install @foxtrotravi/backup-backend
 # or
-yarn add @wallet/backup-backend
+yarn add @foxtrotravi/backup-backend
 ```
 
 **Peer requirements:** Node ≥ 16, TypeScript ≥ 5 (for consumers using TS)
@@ -35,7 +35,7 @@ import {
   BackendAuthError,
   BackendNetworkError,
   BackendValidationError,
-} from '@wallet/backup-backend';
+} from '@foxtrotravi/backup-backend';
 
 const client = new BackendBackupClient({
   baseUrl: 'https://api.mywallet.com',
@@ -183,7 +183,7 @@ Your backend must implement the following endpoints:
 The HTTP implementation is fully abstracted behind `IHttpClient`. Provide your own implementation for custom adapters (e.g., `fetch`, React Native Networking) or for test mocking:
 
 ```ts
-import type { IHttpClient, HttpRequestConfig, HttpResponse } from '@wallet/backup-backend';
+import type { IHttpClient, HttpRequestConfig, HttpResponse } from '@foxtrotravi/backup-backend';
 
 class MyFetchHttpClient implements IHttpClient {
   async request<T>(config: HttpRequestConfig): Promise<HttpResponse<T>> {
@@ -279,7 +279,21 @@ npm run clean
    npm publish --access public
    ```
 
-4. **Using in a monorepo (local linking):**
+4. **Publishing updates to an existing package:**
+   ```bash
+   # 1. Make your code changes
+   # 2. Bump version (choose one based on semver):
+   npm version patch   # 0.1.0 → 0.1.1 (bug fixes)
+   npm version minor   # 0.1.0 → 0.2.0 (new features, backward compatible)
+   npm version major   # 0.1.0 → 1.0.0 (breaking changes)
+
+   # 3. Build and publish
+   npm run build
+   npm publish --access public
+   ```
+   Consumers using `^0.1.0` will receive patch/minor updates automatically on `npm install`.
+
+5. **Using in a monorepo (local linking):**
    ```bash
    # From the wallet-app repo
    npm install ../wallet-backup-backend
