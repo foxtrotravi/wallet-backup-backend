@@ -14,6 +14,8 @@ export type {
   BackendBackupConfig,
   UploadSeedParams,
   UploadEntropyParams,
+  SeedItem,
+  EntropyItem,
   RetryConfig,
   DebugInterceptor,
   RequestDebugInfo,

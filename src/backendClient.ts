@@ -18,6 +18,8 @@ import type {
   UploadSeedParams,
   UploadEntropyParams,
   RetryConfig,
+  SeedItem,
+  EntropyItem,
 } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -129,12 +131,11 @@ export class BackendBackupClient {
   // -------------------------------------------------------------------------
 
   /**
-   * Retrieve the most recent encrypted seed from the backend.
-   * Returns `null` when no backup exists (null response or empty array).
-   * The response shape is validated with Zod; a malformed response throws
-   * BackendValidationError rather than silently returning `undefined`.
+   * Retrieve all encrypted seeds from the backend.
+   * Returns the complete array (each item has seed + metadata).
+   * Empty array when no backup exists.
    */
-  async getSeed(authToken: string): Promise<string | null> {
+  async getSeed(authToken: string): Promise<SeedItem[]> {
     const response = await this.http.request<unknown>({
       url: this.url('/seed'),
       method: 'GET',
@@ -143,26 +144,23 @@ export class BackendBackupClient {
     });
 
     if (response.data === null || response.data === undefined) {
-      return null;
+      return [];
     }
 
     return this.parseResponse(
       response.data,
       SeedResponseSchema,
-      (parsed) => {
-        if (parsed.seeds.length === 0) return null;
-        return parsed.seeds[parsed.seeds.length - 1]!.seed;
-      },
+      (parsed) => parsed.seeds as SeedItem[],
       'GET /seed',
     );
   }
 
   /**
-   * Retrieve the most recent encrypted entropy from the backend.
-   * Returns `null` when no backup exists (null response or empty array).
-   * The response shape is validated with Zod.
+   * Retrieve all encrypted entropies from the backend.
+   * Returns the complete array (each item has entropy + metadata).
+   * Empty array when no backup exists.
    */
-  async getEntropy(authToken: string): Promise<string | null> {
+  async getEntropy(authToken: string): Promise<EntropyItem[]> {
     const response = await this.http.request<unknown>({
       url: this.url('/entropy'),
       method: 'GET',
@@ -171,16 +169,13 @@ export class BackendBackupClient {
     });
 
     if (response.data === null || response.data === undefined) {
-      return null;
+      return [];
     }
 
     return this.parseResponse(
       response.data,
       EntropyResponseSchema,
-      (parsed) => {
-        if (parsed.entropies.length === 0) return null;
-        return parsed.entropies[parsed.entropies.length - 1]!.entropy;
-      },
+      (parsed) => parsed.entropies as EntropyItem[],
       'GET /entropy',
     );
   }

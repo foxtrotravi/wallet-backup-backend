@@ -61,6 +61,20 @@ export interface UploadEntropyParams {
 }
 
 // ---------------------------------------------------------------------------
+// Response item shapes (GET seed / GET entropy)
+// ---------------------------------------------------------------------------
+
+export interface SeedItem {
+  seed: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface EntropyItem {
+  entropy: string;
+  metadata?: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
 // Debug interceptor
 // ---------------------------------------------------------------------------
 
