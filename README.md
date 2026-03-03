@@ -71,9 +71,9 @@ Uploads the encrypted seed to `POST /seed`.
 
 ```ts
 await client.uploadSeed({
-  encryptedSeed: '<base64-or-hex-encrypted-seed>',
+  seed: '<base64-or-hex-encrypted-seed>',
   authToken: 'bearer-token',
-  deviceId: 'device-uuid',    // optional
+  metadata: { device: 'ios' },  // optional
 });
 ```
 
@@ -83,26 +83,34 @@ Uploads the encrypted entropy to `POST /entropy`.
 
 ```ts
 await client.uploadEntropy({
-  encryptedEntropy: '<base64-or-hex-encrypted-entropy>',
+  entropy: '<base64-or-hex-encrypted-entropy>',
   authToken: 'bearer-token',
-  deviceId: 'device-uuid',    // optional
+  metadata: { device: 'ios' },  // optional
 });
 ```
 
-#### `getSeed(authToken): Promise<string>`
+#### `getSeed(authToken): Promise<SeedItem[]>`
 
-Retrieves and validates the encrypted seed from `GET /seed`.
+Retrieves all encrypted seeds from `GET /seed`. Returns the complete array (each item has `seed` + optional `metadata`). Returns `[]` when no backup exists.
 
 ```ts
-const encryptedSeed = await client.getSeed('bearer-token');
+const seeds = await client.getSeed('bearer-token');
+// [{ seed: '...', metadata: { ... } }, ...]
+if (seeds.length > 0) {
+  const latest = seeds[seeds.length - 1].seed;
+}
 ```
 
-#### `getEntropy(authToken): Promise<string>`
+#### `getEntropy(authToken): Promise<EntropyItem[]>`
 
-Retrieves and validates the encrypted entropy from `GET /entropy`.
+Retrieves all encrypted entropies from `GET /entropy`. Returns the complete array (each item has `entropy` + optional `metadata`). Returns `[]` when no backup exists.
 
 ```ts
-const encryptedEntropy = await client.getEntropy('bearer-token');
+const entropies = await client.getEntropy('bearer-token');
+// [{ entropy: '...', metadata: { ... } }, ...]
+if (entropies.length > 0) {
+  const latest = entropies[entropies.length - 1].entropy;
+}
 ```
 
 #### `deleteBackup(authToken): Promise<void>`
@@ -121,7 +129,7 @@ All errors are typed. Use `instanceof` checks to handle each case:
 
 ```ts
 try {
-  const seed = await client.getSeed(authToken);
+  const seeds = await client.getSeed(authToken);
 } catch (err) {
   if (err instanceof BackendAuthError) {
     // HTTP 401 / 403 — token expired or invalid
@@ -169,10 +177,10 @@ Your backend must implement the following endpoints:
 
 | Method | Path | Auth | Body / Response |
 |--------|------|------|-----------------|
-| `POST` | `/seed` | Bearer token | Body: `{ encryptedSeed: string, deviceId?: string }` |
-| `POST` | `/entropy` | Bearer token | Body: `{ encryptedEntropy: string, deviceId?: string }` |
-| `GET` | `/seed` | Bearer token | Response: `{ encryptedSeed: string }` |
-| `GET` | `/entropy` | Bearer token | Response: `{ encryptedEntropy: string }` |
+| `POST` | `/seed` | Bearer token | Body: `{ seed: string, metadata?: object }` |
+| `POST` | `/entropy` | Bearer token | Body: `{ entropy: string, metadata?: object }` |
+| `GET` | `/seed` | Bearer token | Response: `{ seeds: [{ seed: string, metadata?: object }] }` |
+| `GET` | `/entropy` | Bearer token | Response: `{ entropies: [{ entropy: string, metadata?: object }] }` |
 | `DELETE` | `/seed` | Bearer token | — |
 | `DELETE` | `/entropy` | Bearer token | — |
 
@@ -234,7 +242,7 @@ npm install
 # Type-check (zero errors expected)
 npm run typecheck
 
-# Run tests (47 tests)
+# Run tests (51 tests)
 npm test
 
 # Run tests with coverage
