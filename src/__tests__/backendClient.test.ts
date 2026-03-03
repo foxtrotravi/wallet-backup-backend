@@ -159,7 +159,7 @@ describe('BackendBackupClient.uploadEntropy', () => {
 // ---------------------------------------------------------------------------
 
 describe('BackendBackupClient.getSeed', () => {
-  it('returns the last seed from the array', async () => {
+  it('returns all seeds from the array', async () => {
     const http = successHttp({
       seeds: [
         { seed: 'old-seed', metadata: {} },
@@ -168,16 +168,19 @@ describe('BackendBackupClient.getSeed', () => {
     });
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     const result = await client.getSeed(TOKEN);
-    expect(result).toBe('newest-seed');
+    expect(result).toEqual([
+      { seed: 'old-seed', metadata: {} },
+      { seed: 'newest-seed', metadata: { ts: 123 } },
+    ]);
   });
 
-  it('returns the seed when only one item exists', async () => {
+  it('returns the seed array when only one item exists', async () => {
     const http = successHttp({
       seeds: [{ seed: 'only-seed' }],
     });
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     const result = await client.getSeed(TOKEN);
-    expect(result).toBe('only-seed');
+    expect(result).toEqual([{ seed: 'only-seed' }]);
   });
 
   it('calls GET /seed with Authorization Bearer header', async () => {
@@ -191,25 +194,25 @@ describe('BackendBackupClient.getSeed', () => {
     expect(call.headers?.['Authorization']).toBe(`Bearer ${TOKEN}`);
   });
 
-  it('returns null when backend returns null', async () => {
+  it('returns empty array when backend returns null', async () => {
     const http = successHttp(null);
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     const result = await client.getSeed(TOKEN);
-    expect(result).toBeNull();
+    expect(result).toEqual([]);
   });
 
-  it('returns null when backend returns undefined', async () => {
+  it('returns empty array when backend returns undefined', async () => {
     const http = makeMockHttp(() => Promise.resolve({ status: 200, data: undefined as unknown }));
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     const result = await client.getSeed(TOKEN);
-    expect(result).toBeNull();
+    expect(result).toEqual([]);
   });
 
-  it('returns null when seeds array is empty', async () => {
+  it('returns empty array when seeds array is empty', async () => {
     const http = successHttp({ seeds: [] });
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     const result = await client.getSeed(TOKEN);
-    expect(result).toBeNull();
+    expect(result).toEqual([]);
   });
 
   it('throws BackendValidationError when seeds field is missing', async () => {
@@ -236,7 +239,7 @@ describe('BackendBackupClient.getSeed', () => {
 // ---------------------------------------------------------------------------
 
 describe('BackendBackupClient.getEntropy', () => {
-  it('returns the last entropy from the array', async () => {
+  it('returns all entropies from the array', async () => {
     const http = successHttp({
       entropies: [
         { entropy: 'old-entropy' },
@@ -245,21 +248,24 @@ describe('BackendBackupClient.getEntropy', () => {
     });
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     const result = await client.getEntropy(TOKEN);
-    expect(result).toBe('newest-entropy');
+    expect(result).toEqual([
+      { entropy: 'old-entropy' },
+      { entropy: 'newest-entropy', metadata: { ts: 456 } },
+    ]);
   });
 
-  it('returns null when backend returns null', async () => {
+  it('returns empty array when backend returns null', async () => {
     const http = successHttp(null);
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     const result = await client.getEntropy(TOKEN);
-    expect(result).toBeNull();
+    expect(result).toEqual([]);
   });
 
-  it('returns null when entropies array is empty', async () => {
+  it('returns empty array when entropies array is empty', async () => {
     const http = successHttp({ entropies: [] });
     const client = new BackendBackupClient({ baseUrl: BASE_URL }, http);
     const result = await client.getEntropy(TOKEN);
-    expect(result).toBeNull();
+    expect(result).toEqual([]);
   });
 
   it('throws BackendValidationError when entropies field is missing', async () => {
